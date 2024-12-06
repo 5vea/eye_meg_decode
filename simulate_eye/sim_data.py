@@ -15,7 +15,7 @@ def simulate_trials(n=1000, gts=["1","2","3","4"], ts=10000, v=False):
     Simulate n trials, with timepoints ts, and possible ground truths gts.
     """
     gt_trials = np.random.choice(gts, n)
-    trials = np.random.randn(n, ts)
+    trials = np.random.randn(n, 3, ts)
 
     if v:
         print("Size GT", gt_trials.shape)
