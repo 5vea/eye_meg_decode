@@ -12,7 +12,7 @@ bin_size = 50 # ms
 flatten = True
 
 # load data
-gt_trials = np.load("../simulate_eye/gt_trials.npy", allow_pickle=True)
+gt_trials = np.load("../simulate_eye/gt_trials.npy")
 trials = np.load("../simulate_eye/trials.npy")
 
 # bin data
