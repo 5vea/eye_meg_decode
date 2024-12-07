@@ -10,7 +10,7 @@ Assumes fs = 1000 Hz.
 
 import numpy as np
 
-def simulate_trials(n=1000, gts=["1","2","3","4"], ts=10000, v=False):
+def simulate_trials(n=1000, gts=[1,2,3,4], ts=10000, v=False):
     """
     Simulate n trials, with timepoints ts, and possible ground truths gts.
     """
@@ -25,7 +25,7 @@ def simulate_trials(n=1000, gts=["1","2","3","4"], ts=10000, v=False):
 
 # simulate data, from gabor patches with different orientations
 # 0° = 180°, 45° = 225°, 90° = 270°, 135° = 315° --> this is why we stop at 135°
-gt_trials, trials = simulate_trials(n=1000, gts=["0°", "45°", "90°", "135°"], ts=2000, v=True)
+gt_trials, trials = simulate_trials(n=1000, gts=[0, 45, 90, 135], ts=2000, v=True)
 
 # save data
 np.save("gt_trials.npy", gt_trials, allow_pickle=True)
