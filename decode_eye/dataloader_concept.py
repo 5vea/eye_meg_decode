@@ -22,21 +22,16 @@ def plot_bin(data):
     # Plot x, y, and p underneath each other
     fig, axes = plt.subplots(3, 1, figsize=(10, 6), sharex=True)  # 3 rows, 1 column, shared x-axis
 
-    # plot x (first row)
-    axes[0].plot(time, data[0, :], label="x", color="blue")
-    axes[0].set_ylabel("x (movement)")
-    axes[0].legend(loc="upper right")
+    # list for ax properties
+    ax_ylabel = ["x (movement)", "y (movement)", "p (dilation)"]
+    ax_labels = ["x", "y", "p"]
+    ax_colors = ["blue", "green", "red"]
 
-    # plot y (second row)
-    axes[1].plot(time, data[1, :], label="y", color="green")
-    axes[1].set_ylabel("y (movement)")
-    axes[1].legend(loc="upper right")
-
-    # plot p (third row)
-    axes[2].plot(time, data[2, :], label="p (pupil dilation)", color="red")
-    axes[2].set_ylabel("p (dilation)")
-    axes[2].set_xlabel("Time (ms)")
-    axes[2].legend(loc="upper right")
+    # Plot each signal (in rows)
+    for ax_id, ax in enumerate(axes):
+        ax.plot(time, data[ax_id, :], label=ax_labels[ax_id], color=ax_colors[ax_id])
+        ax.set_ylabel(ax_ylabel[ax_id])
+        ax.legend(loc="upper right")
 
     # Adjust layout
     plt.tight_layout()
