@@ -54,3 +54,43 @@ print(dataset.__getitem__(1)[1])
 
 # Create Data Loader with batch size of 12
 data_loader_train = torch.utils.data.DataLoader(dataset=dataset, batch_size=12, shuffle=True)
+
+
+"""
+This code is for visualizing the items from our dataset (x and y coordinates of eye movements and pupil dilation).
+"""
+
+# import necessary lib
+import matplotlib.pyplot as plt
+
+# get one sample from our dataset
+eye_bin, gt_y = dataset.__getitem__(1)
+
+# convert eye_bin tensor to numpy array for plotting
+eye_bin = eye_bin.numpy()
+
+# create a time vector (bin size = 50 ms, sampled at 1 kHz)
+time = np.linspace(0, 50, eye_bin.shape[1])  # time in ms
+
+# Plot x, y, and p underneath each other
+fig, axes = plt.subplots(3, 1, figsize=(10, 6), sharex=True)  # 3 rows, 1 column, shared x-axis
+
+# plot x (first row)
+axes[0].plot(time, eye_bin[0, :], label="x", color="blue")
+axes[0].set_ylabel("x (movement)")
+axes[0].legend(loc="upper right")
+
+# plot y (second row)
+axes[1].plot(time, eye_bin[1, :], label="y", color="green")
+axes[1].set_ylabel("y (movement)")
+axes[1].legend(loc="upper right")
+
+# plot p (third row)
+axes[2].plot(time, eye_bin[2, :], label="p (pupil dilation)", color="red")
+axes[2].set_ylabel("p (dilation)")
+axes[2].set_xlabel("Time (ms)")
+axes[2].legend(loc="upper right")
+
+# Adjust layout
+plt.tight_layout()
+plt.show()
