@@ -8,7 +8,7 @@ Assumes fs = 1000 Hz.
 
 import numpy as np
 
-bin_size = 50 # ms
+bin_size = 100 # ms
 flatten = True
 
 # load data

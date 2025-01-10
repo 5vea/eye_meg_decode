@@ -8,6 +8,7 @@ import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader
 import numpy as np
 import matplotlib.pyplot as plt
+import transformer_model as tf_model
 
 # %% Function to plot the eye data
 # Maybe later we can move this as utility in a separate file or as a method in the dataset class
@@ -17,7 +18,7 @@ def plot_bin(data):
         data (np.array): 3x50 array with eye data.
     """
     # create a time vector (bin size = 50 ms, sampled at 1 kHz)
-    time = np.linspace(0, 50, data.shape[1])  # time in ms
+    time = np.linspace(0, 100, data.shape[1])  # time in ms
 
     # Plot x, y, and p underneath each other
     fig, axes = plt.subplots(3, 1, figsize=(10, 6), sharex=True)  # 3 rows, 1 column, shared x-axis
@@ -69,7 +70,7 @@ class ReadData(torch.utils.data.Dataset):
         gt_y = self.label_output == gt_bin # gt_y: 4x1 array with 1 at the index of the label, 0 elsewhere
 
         # return x and y as torch tensors
-        return torch.from_numpy(eye_bin), torch.from_numpy(gt_y.astype(np.int32))
+        return torch.from_numpy(eye_bin.astype(np.float32)), torch.from_numpy(gt_y.astype(np.int32))
 
 # %% Test the Dataloader
 # Create dataset
@@ -82,10 +83,16 @@ print(dataset.__getitem__(1)[1].shape)
 print(dataset.__getitem__(1)[1])
 
 # Create Data Loader with batch size of 12
-data_loader_train = torch.utils.data.DataLoader(dataset=dataset, batch_size=12, shuffle=True)
+data_loader_train = DataLoader(dataset=dataset, batch_size=12, shuffle=True)
 
 # get one sample from our dataset
 eye_bin, gt_y = dataset.__getitem__(1)
 
 # convert eye_bin tensor to numpy array for plotting and call plotting function
-plot_bin(eye_bin.numpy())
+#plot_bin(eye_bin.numpy())
+
+
+tf_eye = tf_model.EyeTransformerEncClass()
+print(tf_eye(dataset.__getitem__(1)[0].unsqueeze(0)).shape)
+
+print(tf_eye)
