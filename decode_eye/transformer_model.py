@@ -17,6 +17,8 @@ part of the sequence keeps things flexible, because the length of the sequence d
 of the layer needs to be fixed
 
 --> for the sake of simplicity, we will for now settle on an FC classifier on the flattened context embeddings
+for cls discussion, maybe consider global average pooling with adapted LR
+https://datascience.stackexchange.com/questions/90649/class-token-in-vit-and-bert
 
 I will base the class on https://deeplearning-jupyterbook.github.io/notebooks/llm.html
 
@@ -32,13 +34,18 @@ import torch.nn as nn
 from torch.nn import functional as F
 from torchtune.modules import RotaryPositionalEmbeddings
 import math
-# not using the vision module, because we just have 1D patches
 
+# put in argument parser
 # currently for 100 ms bins
 n_classes = 10
 patch_count = 10
 patch_size = 10
 
+# utils to save checkpoints
+# look at deepcsf for it --> always save state dict of optimizer, network and scheduler, if you did it
+
+# tensorboard logging + close tb am ende
+# look at deepcsf for logging and arg parsing
 
 # positional encoding from https://stackoverflow.com/questions/77444485/using-positional-encoding-in-pytorch
 # set dropout to zero, because it is no learnable embedding
@@ -295,5 +302,9 @@ class EyeTransformerEncClass(nn.Module):
         logits = self.classifier(x)  # Shape: (batch_size, sequence_length * patch_count)
 
         return logits
+    # cls token for classification
 
-# missing: skip connections
+# missing: skip connections!
+
+# for CNN just orient on resnet strucutre to have it adaptable
+## --> alle klassen sind fein --> bro alter, das ist ja mal ein ding

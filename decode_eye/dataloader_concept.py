@@ -9,6 +9,11 @@ from torch.utils.data import Dataset, DataLoader
 import numpy as np
 import matplotlib.pyplot as plt
 import transformer_model as tf_model
+import os
+
+#os.environ["CUDA_VISIBLE_DEVICES"] = "GPU-ed36dbd8-0753-22d1-93db-ab283e5efff1"
+
+# for now we will stick with whole trial classification --> one trial is
 
 # %% Function to plot the eye data
 # Maybe later we can move this as utility in a separate file or as a method in the dataset class
@@ -93,6 +98,6 @@ eye_bin, gt_y = dataset.__getitem__(1)
 
 
 tf_eye = tf_model.EyeTransformerEncClass()
-print(tf_eye(dataset.__getitem__(1)[0].unsqueeze(0)).shape)
+print(tf_eye(dataset.__getitem__(1)[0].unsqueeze(0)))
 
 print(tf_eye)
