@@ -1,7 +1,7 @@
 """
 Here we are now taking our previously prepared datasets and merging them into one per person.
 Then we are shaping it - we will save two formats: one with the shape (n_samples, n_features, n_timepoints_trial) and one with
-the shape (n_samples, bin, n_features, n_timepoints_bin).
+the shape (n_samples, n_features, n_timepoints_bin) with one file per bin.
 
 Also, this code drops the last timepoint of each trial, to have even bins.
 

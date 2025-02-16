@@ -26,7 +26,7 @@ print(bins)
 def map_time_to_bin(timepoint):
     starts = timepoints_starts <= timepoint
     ends = timepoints_ends > timepoint
-    return bins[starts & ends][0]
+    return bins[starts & ends]
 
 for part in range(4):
     part_files = glob.glob(os.path.join(folder, f"*cleaned_P{part+1}_*.csv"))
