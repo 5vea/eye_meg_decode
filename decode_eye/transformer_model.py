@@ -32,7 +32,6 @@ import os
 import torch
 import torch.nn as nn
 from torch.nn import functional as F
-from torchtune.modules import RotaryPositionalEmbeddings
 import math
 
 # put in argument parser

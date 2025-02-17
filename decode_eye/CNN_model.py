@@ -112,10 +112,10 @@ class ResNet1D(nn.Module):
 
             return x
 
-# Hyperparameters
+"""# Hyperparameters
 in_channels = 3 # nr of input channels (x, y, pupil dil)
 num_classes = 10 # nr of output classes
 patch_size = 10
 
 model = ResNet1D(in_channels=in_channels, num_classes=num_classes, patch_size=patch_size)
-print(model)
+print(model)"""
