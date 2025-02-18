@@ -1,28 +1,13 @@
 """
 This code is for the transformer model
-In principle it is similar to the ViT logic: first we want to build patches from our eye data
-Then we want to tokenize them with kernels --> the dimension of the patch embedding is therefore equal to the number of kernels
---> one kernel encodes the patch in one dimension
-Opposed to the ViT we will not use a CLS token, because this model is for pure classification, which means that we will not do
-any pretraining for which a "patch wise" output is needed
-To keep things more easily interpretable, we will aim for a simple model, with only one transformer layer and only some MLP layers
-Later we want to probe the attention maps of each head
-Self attention will be used, but there will be no masking: we do not want to inhibit the direction of interaction between the patches
+We will combine multiple ideas: a cls token and GAP will be used as input for the final classification layers.
+--> the model can therefore just use both and decide which one to use by assigning weights
+In principle we have a transformer encoder with a final classification layer
+--> GAP will be used on the context embeddings of the sequence and cls token will be concatenated to the averaged context embeddings
 
-CLS vs FC Classifier?
-- this question kept us a bit up at night
-- CLS tokens are especially useful, because here we have a sequence to sequence encoder -> so adding a CLS token as just a
-part of the sequence keeps things flexible, because the length of the sequence does not need to be fixed
-- when using an FC classifier on all context embeddings, we need a fixed patch length, because the dimension
-of the layer needs to be fixed
-
---> for the sake of simplicity, we will for now settle on an FC classifier on the flattened context embeddings
-for cls discussion, maybe consider global average pooling with adapted LR
-https://datascience.stackexchange.com/questions/90649/class-token-in-vit-and-bert
-
-I will base the class on https://deeplearning-jupyterbook.github.io/notebooks/llm.html
-
-The positional encoding with i, sin and cos will be used
+The input will be projected by a convolutional layer of 1x1 convolutions to the embedding space. Our original signal has 3 channels (x, y, pupil dilation).
+The embedding dimension will be 64.
+The positional encoding will be added to the input embeddings. The transformer encoder will then process the input embeddings.
 """
 
 # maybe add skip connections in attention head
@@ -34,11 +19,7 @@ import torch.nn as nn
 from torch.nn import functional as F
 import math
 
-# put in argument parser
-# currently for 100 ms bins
-n_classes = 10
-patch_count = 10
-patch_size = 10
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # utils to save checkpoints
 # look at deepcsf for it --> always save state dict of optimizer, network and scheduler, if you did it
@@ -49,7 +30,7 @@ patch_size = 10
 # positional encoding from https://stackoverflow.com/questions/77444485/using-positional-encoding-in-pytorch
 # set dropout to zero, because it is no learnable embedding
 class PositionalEncoding(nn.Module):
-    def __init__(self, d_model, dropout = 0, max_len = 10):
+    def __init__(self, d_model, dropout = 0, max_len = 1500):
         super().__init__()
         self.dropout = nn.Dropout(p=dropout)
 
@@ -203,29 +184,29 @@ class TransformerBlock(nn.Module):
 
 # needs to be adapted
 class EyeTransformerEncClass(nn.Module):
-    """A GPT-based language model that utilises transformer blocks to generate sequences."""
+    """ A transformer encoder model for eye data classification. """
 
-    def __init__(self, embedding_dim=64, num_heads=12, num_layers=1, dropout_rate=0):
+    def __init__(self, embedding_dim=64, num_heads=12, num_layers=1, dropout_rate=0, n_classes=1000):
         """
         Initialises the model with specified vocabulary size, embedding dimension, number of heads,
         number of transformer layers, and dropout rate.
 
         Args:
-        vocab_size (int): Size of the vocabulary.
-        embedding_dim (int): Dimension of token embeddings.
-        num_heads (int): Number of attention heads.
-        num_layers (int): Number of transformer layers.
-        dropout_rate (float): Dropout probability for regularisation.
+        embedding_dim (int): Dimension of the token embeddings.
+        num_heads (int): Number of attention heads in the multi-head attention layers.
+        num_layers (int): Number of transformer blocks to stack.
+        dropout_rate (float): Dropout rate to apply within the model.
+        n_classes (int): Number of classes for classification.
         """
         super().__init__()
 
         # exclusive convolution to project to embedding space
         # here we are just moving in time: 3 channels = x,y and pupil dilation
-        self.conv_projection = nn.Conv1d(in_channels=3, out_channels=embedding_dim, kernel_size=patch_size, stride=patch_size)
+        self.conv_projection = nn.Conv1d(in_channels=3, out_channels=embedding_dim, kernel_size=1, stride=1)
 
-        # RoPE embedding
-        #self.position_embedding = RotaryPositionalEmbeddings(dim=embedding_dim, max_seq_len=patch_count)
-        # --> did not work for us
+        self.embedding_dim = embedding_dim
+
+        # positional encoding: sine and cosine functions
         self.position_embedding = PositionalEncoding(embedding_dim)
 
         # Stack of transformer blocks
@@ -235,16 +216,17 @@ class EyeTransformerEncClass(nn.Module):
         )
 
         # Final layer normalisation for stable outputs
-        self.final_layer_norm = nn.LayerNorm(embedding_dim)
+        self.layer_norm = nn.LayerNorm(embedding_dim)
 
         # add one MLP non linearity
         self.mlp_head = MLP(embedding_dim, dropout_rate)
 
         # Output layer FC on all context embeddings
+        # Size is reasonable because there are a lot of classes, so we need a lot of parameters
         self.classifier = nn.Sequential(
-            nn.Linear(embedding_dim * patch_count, 2 * embedding_dim * patch_count),  # expects flattened FC input
+            nn.Linear(embedding_dim * 2, 2 * 2 * embedding_dim),  # expects flattened FC input
             nn.GELU(),  # swapped to GeLU
-            nn.Linear(2 * embedding_dim * patch_count, n_classes)  # for classes
+            nn.Linear(2 * 2 * embedding_dim, n_classes)  # for classes
         )
 
         # Initialise weights for stability
@@ -267,43 +249,77 @@ class EyeTransformerEncClass(nn.Module):
         input_ids (Tensor): Tensor of eye signal --> will be tokenized and embedded with conv_projection
 
         Returns:
-        Tensor: Logits of shape (batch_size, sequence_length, vocab_size) indicating probabilities of each token.
+        Tensor: Predictions for classification.
         """
         batch_size, channels, sequence_length = input_ids.shape
+
+        # cls token for classification
+        cls_token = torch.zeros(batch_size, 1, self.embedding_dim).to(device)
 
         # Create token embeddings
         token_embeddings = self.conv_projection(input_ids)  # Shape: (batch_size, embedding_dim, sequence_length)
         # warning: dim needs to be swapped
 
         # this is annoying, but embedding dim and channel out need to be switched
-        token_embeddings = torch.swapaxes(token_embeddings, 1,2)
-        # now it is on normal grounds, lets make it ugly for the function
-        token_embeddings = torch.swapaxes(token_embeddings, 0, 1)
+        token_embeddings = torch.swapaxes(token_embeddings, 1,2) # Shape: (batch_size, sequence_length, embedding_dim)
 
+        # concat cls token to embeddings
+        token_embeddings = torch.cat((cls_token, token_embeddings), dim=1)  # Shape: (batch_size, sequence_length + 1, embedding_dim)
+
+        # now it is on normal grounds, lets make it ugly for the function
+        token_embeddings = torch.swapaxes(token_embeddings, 0, 1) # Shape: (sequence_length + 1, batch_size, embedding_dim)
+
+        # apply positional encoding
         x = self.position_embedding(token_embeddings)
 
         # switch back to normal axes
-        x = torch.swapaxes(x, 0, 1)
+        x = torch.swapaxes(x, 0, 1) # Shape: (batch_size, sequence_length + 1, embedding_dim)
 
         # Pass through stacked transformer blocks
-        x = self.transformer_blocks(x)  # Shape: (batch_size, sequence_length, embedding_dim)
+        x = self.transformer_blocks(x)  # Shape: (batch_size, sequence_length + 1, embedding_dim)
 
         # Apply final layer normalisation
-        x = self.final_layer_norm(x)  # Shape: (batch_size, sequence_length, embedding_dim)
+        x = self.layer_norm(x)  # Shape: (batch_size, sequence_length + 1, embedding_dim)
 
-        # MLP head
-        #x = self.mlp_head(x)
+        # get embedded cls token
+        cls_token = x[:, 0, :]  # Shape: (batch_size, embedding_dim)
+
+        x = x[:, 1:, :]  # Shape: (batch_size, sequence_length, embedding_dim)
+
+        # gap for sequence embeddings
+        x = torch.mean(x, dim=1)  # Shape: (batch_size, embedding_dim)
+
+        # norm
+        x = self.layer_norm(x) # Shape: (batch_size, embedding_dim)
+
+        # concat x and cls token
+        x = torch.cat((x, cls_token), dim=1)  # Shape: (batch_size, 2 * embedding_dim)
 
         # flatten after batch size for FC classifier
         x = torch.flatten(x, start_dim=1)
 
-        # Convert to logits for each token in the vocabulary
-        logits = self.classifier(x)  # Shape: (batch_size, sequence_length * patch_count)
+        # make prediction
+        logits = self.classifier(x)  # Shape: (batch_size, n_classes)
 
         return logits
-    # cls token for classification
 
-# missing: skip connections!
 
-# for CNN just orient on resnet strucutre to have it adaptable
-## --> alle klassen sind fein --> bro alter, das ist ja mal ein ding
+# %% Test model
+if __name__ == "__main__":
+    model = EyeTransformerEncClass(num_layers=1, num_heads=4, n_classes=1700, embedding_dim=32)
+
+    # Test input
+    input_ids = torch.randint(0, 100, (1, 3, 1400))  # Batch size 1, 3 channels, 1400 time steps
+    # make float for model
+    input_ids = input_ids.float()
+
+    print(input_ids.shape)
+
+    # Forward pass
+    output = model(input_ids)
+    print(output.shape)
+
+    print(model)
+
+    # parameter count
+    print("Num Params", sum(p.numel() for p in model.parameters() if p.requires_grad))
