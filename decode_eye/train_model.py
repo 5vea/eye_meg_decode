@@ -68,7 +68,7 @@ if (not args.load) and (not override):
 class ReadData(torch.utils.data.Dataset):
     def __init__(self, gts_path, eye_path, classes):
         """
-            Args:
+        Args:
             gts_path (str): Path to the ground truth labels .npy file.
             eye_path (str): Path to the trials .npy file.
         """
