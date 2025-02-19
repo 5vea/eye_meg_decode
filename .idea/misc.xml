@@ -3,5 +3,5 @@
   <component name="Black">
     <option name="sdkName" value="Python 3.10 (eye_meg_dec)" />
   </component>
-  <component name="ProjectRootManager" version="2" project-jdk-name="Python 3.10 (venv)" project-jdk-type="Python SDK" />
+  <component name="ProjectRootManager" version="2" project-jdk-name="Remote Python 3.8.10 (sftp://svea_kurten@134.176.76.166:22/home/saskia_fohs/mbb_dl_project/share_me/bin/python)" project-jdk-type="Python SDK" />
 </project>

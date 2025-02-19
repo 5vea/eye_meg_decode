@@ -10,14 +10,6 @@ import torch
 import torch.nn as nn
 import torchvision
 
-
-#DAS IST ALLES NUR GEKLAUT EYOEYO ICH HAB NEN HOLZKOPF UND AUCH STEINE, EYO!
-#DAS IST ALLES NUR GEKLAUT EYOEYO, DOCH DAS WEIß ICH NUR UND DIE SALZIKAI GANZ ALLEINE, EYO!
-#DAS IST ALLES NUR GEKLAUT, NUR GEZOGEN, NUR GESTOHLEN UND GERAUBT
-#TSCHULDIGUNG, HAB MIR MEIN EIGENES GRAB GEBAUT
-#TSCHULDIGUNG, MIT VERLAUB
-#<'3
-
 #device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 
@@ -116,6 +108,8 @@ class ResNet1D(nn.Module):
 in_channels = 3 # nr of input channels (x, y, pupil dil)
 num_classes = 10 # nr of output classes
 patch_size = 10
+
+# immer stride von 1
 
 model = ResNet1D(in_channels=in_channels, num_classes=num_classes, patch_size=patch_size)
 print(model)"""
