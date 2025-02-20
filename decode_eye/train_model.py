@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader
+import torch.optim as optim
 import numpy as np
 import transformer_model as tf
 import CNN_model as cnn
@@ -93,3 +94,79 @@ class ReadData(torch.utils.data.Dataset):
         label = self.gts[idx]
 
         return eye_data, label
+
+# First try
+def epoch_loop(model, data, criterion, optimizer):
+    is_train = False if optimizer is None else True
+
+    # set train/eval accordingly
+    model.train() if is_train else model.eval()
+    with torch.set_grad_enabled(is_train):
+        input_data = torch.tensor(data[0], dtype=torch.float)
+        target = torch.tensor(data[1], dtype=torch.float)
+
+        outputs = model(input_data) # forward pass
+
+        loss = criterion(outputs, target) # loss function
+        acc = accuracy(outputs, target)
+
+        if is_train:
+            optimizer.zero_grad() # reset gradients
+            loss.backward() # backpropagation of loss
+            optimizer.step() # update weights
+
+    return loss, acc
+
+# acc, lr definen
+
+
+# New try
+# Adjust dataloader
+
+def train_model(model, ReadData, criterion, optimizer, device, num_epochs=10):
+    model.to(device)
+
+    # update model weights by looping through dataset multiple times
+    for epoch in range(num_epochs):
+        model.train() # set model to train mode
+        running_loss = 0.0 # keep track of total loss
+        correct, total = 0, 0 # calculate accuracy
+
+        for inputs, labels in ReadData:
+            inputs, labels = inputs.to(device), labels.to(device)
+
+            optimizer.zero_grad() # reset gradients
+            outputs = model(inputs) # forward pass
+            loss = criterion(outputs, labels)
+            loss.backward() # backpropagation
+            optimizer.step() # update weights
+
+            # track loss and accuracy
+            running_loss += loss.item()
+            _, predicted = torch.max(outputs.data, 1)
+            total += labels.size(0)
+            correct += (predicted == labels).sum(),item()
+
+        epoch_loss = running_loss / len(ReadData) # average loss over all batches in epoch
+        epoch_acc = 100 * correct / total # accuracy as %
+        print(f"Epoch {epoch+1}/{num_epochs}, Loss: {epoch_loss:.4f}, Acc: {epoch_acc:.2f}%") # epoch-wise progress
+
+#device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+### has to be adjusted
+# for the CNN
+cnn_model = ResNet1D(in_channels=3, num_classes=10, patch_size=10)
+cnn_criterion = nn.CrossEntropyLoss()
+cnn_optimizer = optim.AdamW(cnn_model.parameters(), lr=0.001)
+
+# train CNN
+train_model(cnn_model, ReadData, cnn_criterion, cnn_optimizer, device, num_epochs=10)
+
+# for transfomer model
+transformer_model = EyeTransformerEncClass(embedding_dim=64, num_heads=8, num_layers=1, dropout_rate=0.1)
+transformer_criterion = nn.CrossEntropyLoss()
+transformer_optimizer = optim.AdamW(transformer_model.parameters(), lr=0.001)
+
+
+
+
