@@ -7,10 +7,14 @@ This project will focus on the eye movements side of things.
 
 ## Plan:
 First we need an embedding model fit for eye movements. We will compare a CNN (a 1D ResNet) and a transformer encoder. Both will be trained as classifiers for 1/3 of the concepts, to mitigate later double dipping. 
-There performance as decoders can then be tested on the 2/3 of held out classes.
+The performance of the decoders is tested on one sample that was left out from all of the 1/3 training classes. This elicited that the transformer was heavily overfitting (100% Acc@1 in train and 0.32% in test), which is why random epoch wise data augmentation was introduced. The data augmentation is discussed below.
 
 Then both will be used as enmbedding models for eye movements in seperate instances.
 The non-linear embedding layers for a pretrained vision encoder (e.g. ViT-H) will be trained on the 1/3 of classes that were already trained in the classfication (the double dipping part) and 1/3 of the left out classes. Then the model will be tested in zero shot evaluation within and between classes (e.g. 2/3AFC) on the last left out 1/3 of classes.
 
-## Things we may want to do:
-Not use the whole class in training, but also keep class samples for testing.
+
+## Data Augmentation
+We tried smooth time masking as a way, to break heavy trial dependent classifications. The length of the mask is 0.1 of signal length. 
+Furthermore, we added gaussian noise to the data.
+
+Those steps were only done in training and can be found in the transformer module.
