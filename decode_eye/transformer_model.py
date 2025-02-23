@@ -6,11 +6,13 @@ In principle we have a transformer encoder with a final classification layer
 --> GAP will be used on the context embeddings of the sequence and cls token will be concatenated to the averaged context embeddings
 
 The input will be projected by a convolutional layer of 1x1 convolutions to the embedding space. Our original signal has 3 channels (x, y, pupil dilation).
-The embedding dimension will be 64.
-The positional encoding will be added to the input embeddings. The transformer encoder will then process the input embeddings.
-"""
+The positional encoding will be added to the input embeddings.
 
-# maybe add skip connections in attention head
+If the transformer is training, it will apply smooth time masking to the input data, so that the model is hindered to
+learn the exact timepoints of the data. This is done by smoothly masking the inputs in the time dimension.
+Also, amplitude jitter is applied to the input data, so that the model is not able to learn the exact amplitudes of the data.
+The amplitude jitter is additive, because signal inversions would distort later interpretation techniques.
+"""
 
 import numpy as np
 import os
@@ -30,10 +32,8 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # positional encoding from https://stackoverflow.com/questions/77444485/using-positional-encoding-in-pytorch
 # set dropout to zero, because it is no learnable embedding
 class PositionalEncoding(nn.Module):
-    def __init__(self, d_model, dropout = 0, max_len = 1500):
+    def __init__(self, d_model, max_len = 1700):
         super().__init__()
-        self.dropout = nn.Dropout(p=dropout)
-
         position = torch.arange(max_len).unsqueeze(1)
         div_term = torch.exp(torch.arange(0, d_model, 2) * (-math.log(10000.0) / d_model))
         pe = torch.zeros(max_len, 1, d_model)
@@ -48,7 +48,7 @@ class PositionalEncoding(nn.Module):
             # this sucks, but we have to first optimize for this shape
         """
         x = x + self.pe[:x.size(0)]
-        return self.dropout(x)
+        return x
 
 class SelfAttention(nn.Module):
     """One head of self-attention: calculates attention for each token in relation to others."""
@@ -181,6 +181,65 @@ class TransformerBlock(nn.Module):
         x = x + self.feedforward(self.norm2(x))
         return x
 
+class SmoothTimeMask(nn.Module):
+    """Applies a smooth time mask to the input data during training. From https://arxiv.org/pdf/2206.14483
+    Warning: had to correct their formula: the input for the second sigmoid needs to be t - mask_start - mask_length and
+    not mask_start + mask_length - t
+    Furthermore, the first sigmoid needs to be mask_start - t and not t - mask_start
+    Maybe text authors about it."""
+
+    def __init__(self, mask_prob=0.1, mask_span=0.1, transition=0.3):
+        """
+        Args:
+        mask_prob (float): Probability of masking a time span.
+        mask_span (float): Maximum proportion of the sequence to mask.
+        transition (float): Transition width for the sigmoid function.
+        """
+        super().__init__()
+        self.mask_prob = mask_prob
+        self.mask_span = mask_span
+        self.transition = transition
+
+    def sigmoid(self, t):
+        return 1 / (1 + torch.exp((-t) * self.transition))
+
+    def mask_sigmoid(self, t, mask_start, mask_length):
+        return self.sigmoid(mask_start - t) + self.sigmoid(t - mask_start - mask_length)
+
+    def forward(self, x):
+        batch_size, channels, sequence_length = x.shape
+
+        # decide if item in batch is masked
+        mask = torch.rand(batch_size) < self.mask_prob
+
+        # get points to mask
+        mask_start = torch.randint(0, int(sequence_length * (1 - self.mask_span)), (batch_size,)).unsqueeze(1)
+        mask_length = sequence_length * self.mask_span
+
+        x[mask,:,:] = x[mask,:,:] * self.mask_sigmoid(torch.arange(sequence_length), mask_start, mask_length).unsqueeze(1)[mask,:,:].to(device)
+
+        return x
+
+class AmplitudeJitter(nn.Module):
+    """Applies gaussian noise to the input data during training."""
+
+    def __init__(self, jitter_factor=0.1):
+        """
+        Args:
+        jitter_factor (float): Maximum amplitude scaling factor.
+        """
+        super().__init__()
+        self.jitter_factor = jitter_factor
+
+    def forward(self, x):
+        batch_size, sequence_length, embedding_dim = x.shape
+
+        # generate gaussian noise
+        noise = torch.randn(batch_size, sequence_length, embedding_dim) * self.jitter_factor
+
+        # add noise to input
+        return x + noise.to(device)
+
 
 # needs to be adapted
 class EyeTransformerEncClass(nn.Module):
@@ -232,6 +291,10 @@ class EyeTransformerEncClass(nn.Module):
         # Initialise weights for stability
         self.apply(self._init_weights)
 
+        # Reg Data Aug
+        self.time_mask = SmoothTimeMask(mask_prob=0.3, mask_span=0.07, transition=9)
+        self.amplitude_jitter = AmplitudeJitter(jitter_factor=0.05)
+
     def _init_weights(self, module):
         """Initialises weights for linear and conv1d embedding layers."""
         if isinstance(module, nn.Linear):
@@ -252,6 +315,11 @@ class EyeTransformerEncClass(nn.Module):
         Tensor: Predictions for classification.
         """
         batch_size, channels, sequence_length = input_ids.shape
+
+        # apply data augmentation only during training
+        if self.training:
+            input_ids = self.time_mask(input_ids)
+            input_ids = self.amplitude_jitter(input_ids)
 
         # cls token for classification
         cls_token = torch.zeros(batch_size, 1, self.embedding_dim).to(device)
@@ -309,17 +377,16 @@ if __name__ == "__main__":
     model = EyeTransformerEncClass(num_layers=1, num_heads=4, n_classes=1700, embedding_dim=32)
 
     # Test input
-    input_ids = torch.randint(0, 100, (1, 3, 1400))  # Batch size 1, 3 channels, 1400 time steps
+    input_ids = torch.randint(1, 100, (2, 3, 20))  # Batch size 1, 3 channels, 1400 time steps
     # make float for model
     input_ids = input_ids.float()
-
-    print(input_ids.shape)
 
     # Forward pass
     output = model(input_ids)
     print(output.shape)
+    print(output)
 
-    print(model)
+    #print(model)
 
     # parameter count
     print("Num Params", sum(p.numel() for p in model.parameters() if p.requires_grad))
