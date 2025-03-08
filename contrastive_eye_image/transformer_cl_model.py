@@ -17,7 +17,7 @@ from torch.nn import functional as F
 import math
 import torchvision
 
-device = torch.device("cpu" if torch.cuda.is_available() else "cpu")
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # positional encoding from https://stackoverflow.com/questions/77444485/using-positional-encoding-in-pytorch
 # set dropout to zero, because it is no learnable embedding
@@ -311,8 +311,8 @@ class ImageEncoder(nn.Module):
         # 5 head: just switch classifier to identity
         self.pretrained.heads = nn.Identity()
         # freeze the model
-        """for param in self.pretrained.parameters():
-            param.requires_grad = False"""
+        for param in self.pretrained.parameters():
+            param.requires_grad = False
     def forward(self, x):
         return self.pretrained(x)
 
@@ -324,8 +324,8 @@ class ContrastiveModel_tf(nn.Module):
         self.projection_eye = ProjectionHead(embedding_dim=2*embedding_dim, projection_dim=projection_dim)
         self.projection_image = ProjectionHead(embedding_dim=768, projection_dim=projection_dim)
     def forward(self, batch):
-        eye_input = batch[0]
-        image_input = batch[1]
+        eye_input = batch["eye_data"]
+        image_input = batch["img"]
         eye_features = self.eye_encoder(eye_input)
         image_features = self.image_encoder(image_input)
         eye_embedding = self.projection_eye(eye_features)

@@ -4,6 +4,8 @@ Same PreResNet just without class layer and with ViT Embedding Matching
 
 The image encoder is a pretrained ViT model from torchvision, but its parameters are not frozen. It will have a lower learning rate than the rest of the model.
 See training script for more details.
+
+Actually frozen again, to have less computational cost.
 """
 
 # import libraries
@@ -13,7 +15,7 @@ import torch
 import torch.nn as nn
 import torchvision
 
-device = torch.device("cpu" if torch.cuda.is_available() else "cpu")
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # Architecture of ResNet-like model
 """Basic Building Block that applies two convolutional layers with batch normalization and ReLU activation in between. 
@@ -159,9 +161,9 @@ class ImageEncoder(nn.Module):
         # original functionality is lost
         # 5 head: just switch classifier to identity
         self.pretrained.heads = nn.Identity()
-        """# freeze the model
+        # freeze the model
         for param in self.pretrained.parameters():
-            param.requires_grad = False"""
+            param.requires_grad = False
     def forward(self, x):
         return self.pretrained(x)
 
@@ -173,8 +175,8 @@ class ContrastiveModel_cnn(nn.Module):
         self.projection_eye = ProjectionHead(embedding_dim=channels[-1], projection_dim=projection_dim)
         self.projection_image = ProjectionHead(embedding_dim=768, projection_dim=projection_dim)
     def forward(self, batch):
-        eye_input = batch[0]
-        image_input = batch[1]
+        eye_input = batch["eye_data"]
+        image_input = batch["img"]
         eye_features = self.eye_encoder(eye_input)
         image_features = self.image_encoder(image_input)
         eye_embedding = self.projection_eye(eye_features)
