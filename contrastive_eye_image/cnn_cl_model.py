@@ -1,19 +1,11 @@
 """
-This code is for the CNN model.
-We tried to create a simple PreResNet model.
+CNN CL Model
+Same PreResNet just without class layer and with ViT Embedding Matching
 
-The model is a PreResNet-like architecture for 1D signals.
-To improve performance and to be able to apply dropout that was tested at different positions in the same way as https://arxiv.org/pdf/2302.06112
-we made the residual blocks after PreResNet (https://arxiv.org/pdf/1603.05027), instead of the original ResNet architecture.
+The image encoder is a pretrained ViT model from torchvision, but its parameters are not frozen. It will have a lower learning rate than the rest of the model.
+See training script for more details.
 
-The head is similar to MobileNet.
-
-To avoid overfitting, we applied data augmentation techniques during training. We used a SmoothTimeMask and AmplitudeJitter to add noise to the input data.
-Those are applied only during training and described more in detail in the transformer_model.py file.
-
-Furthermore, we added dropout to the PreResNet blocks and the fully connected layer, as proposed by https://arxiv.org/pdf/2302.06112
-Dropout was applied after the last bn but before the second weight layer in a BasicBlock.
-Furthermore, dropout was applied in the head after the last batch norm but before the GAP.
+Actually frozen again, to have less computational cost.
 """
 
 # import libraries
@@ -67,72 +59,13 @@ class BasicBlock(nn.Module):
 
         return out
 
-class SmoothTimeMask(nn.Module):
-    """Applies a smooth time mask to the input data during training. From https://arxiv.org/pdf/2206.14483
-    Warning: had to correct their formula: the input for the second sigmoid needs to be t - mask_start - mask_length and
-    not mask_start + mask_length - t
-    Furthermore, the first sigmoid needs to be mask_start - t and not t - mask_start
-    Maybe text authors about it."""
-
-    def __init__(self, mask_prob=0.1, mask_span=0.1, transition=0.3):
-        """
-        Args:
-        mask_prob (float): Probability of masking a time span.
-        mask_span (float): Maximum proportion of the sequence to mask.
-        transition (float): Transition width for the sigmoid function.
-        """
-        super().__init__()
-        self.mask_prob = mask_prob
-        self.mask_span = mask_span
-        self.transition = transition
-
-    def sigmoid(self, t):
-        return 1 / (1 + torch.exp((-t) * self.transition))
-
-    def mask_sigmoid(self, t, mask_start, mask_length):
-        return self.sigmoid(mask_start - t) + self.sigmoid(t - mask_start - mask_length)
-
-    def forward(self, x):
-        batch_size, channels, sequence_length = x.shape
-
-        # decide if item in batch is masked
-        mask = torch.rand(batch_size) < self.mask_prob
-
-        # get points to mask
-        mask_start = torch.randint(0, int(sequence_length * (1 - self.mask_span)), (batch_size,)).unsqueeze(1)
-        mask_length = sequence_length * self.mask_span
-
-        x[mask,:,:] = x[mask,:,:] * self.mask_sigmoid(torch.arange(sequence_length), mask_start, mask_length).unsqueeze(1)[mask,:,:].to(device)
-
-        return x
-
-class AmplitudeJitter(nn.Module):
-    """Applies gaussian noise to the input data during training."""
-
-    def __init__(self, jitter_factor=0.1):
-        """
-        Args:
-        jitter_factor (float): Maximum amplitude scaling factor.
-        """
-        super().__init__()
-        self.jitter_factor = jitter_factor
-
-    def forward(self, x):
-        batch_size, sequence_length, embedding_dim = x.shape
-
-        # generate gaussian noise
-        noise = torch.randn(batch_size, sequence_length, embedding_dim) * self.jitter_factor
-
-        # add noise to input
-        return x + noise.to(device)
-
 class ResNet1D(nn.Module):
     """ResNet-like architecture for 1D signals including
     - initial convolutional layer
     - 3 ResNet layers with residual connections (_make_layer)
     - global average pooling for dimensionality reduction
-    - fully connected output layer for classification"""
-    def __init__(self, num_classes, num_blocks=[2, 2, 2], channels=[64, 128, 256], dropout=0.1):
+    """
+    def __init__(self, num_blocks=[2, 2, 2], channels=[64, 128, 256], dropout=0.1):
         super(ResNet1D, self).__init__()
 
         self.droprate = dropout
@@ -150,14 +83,9 @@ class ResNet1D(nn.Module):
 
         # global average pooling
         self.global_pool = nn.AdaptiveAvgPool1d(1)
-        self.fc = nn.Linear(channels[2], num_classes) # classifier
 
         # dropout
         self.dropout = nn.Dropout(dropout)
-
-        # Reg Data Aug
-        self.time_mask = SmoothTimeMask(mask_prob=0.3, mask_span=0.07, transition=9)
-        self.amplitude_jitter = AmplitudeJitter(jitter_factor=0.05)
 
     """Creating sequence of multiple BasicBlocks to form ResNet layer
     First layer might use adjustment if input size changes (also z.B. stride)
@@ -182,10 +110,6 @@ class ResNet1D(nn.Module):
         return nn.Sequential(*layers)
 
     def forward(self, x):
-        # apply data augmentation only during training
-        if self.training:
-            x = self.time_mask(x)
-            x = self.amplitude_jitter(x)
 
         x = self.conv1(x)
 
@@ -201,20 +125,88 @@ class ResNet1D(nn.Module):
         x = self.relu(x)
 
         x = self.global_pool(x) # (batch_size, channels, 1)
-        x = torch.flatten(x, 1)
-        x = self.fc(x)
+        x = torch.flatten(x, 1) # (batch_size, channels)
 
         return x
 
+# A projection head to map encoder outputs to a shared embedding space
+class ProjectionHead(nn.Module):
+    """
+    Copied from https://deeplearning-jupyterbook.github.io/notebooks/clip.html
+    """
+    def __init__(self, embedding_dim, projection_dim):
+        super().__init__()
+        # Linear layer to project the encoder's output to a lower-dimensional space
+        self.projection = nn.Linear(embedding_dim, projection_dim)
+        self.gelu = nn.GELU()  # Activation function
+        self.fc = nn.Linear(projection_dim, projection_dim)  # Fully connected layer
+        self.layer_norm = nn.LayerNorm(projection_dim)  # Normalize embeddings
+
+    def forward(self, x):
+        # Project the input embeddings
+        projected = self.projection(x)
+        # Apply activation and a second linear layer
+        x = self.gelu(projected)
+        x = self.fc(x)
+        # Add skip connection and normalize
+        x = x + projected
+        x = self.layer_norm(x)
+        return x
+
+class ImageEncoder(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.pretrained = torchvision.models.vit_b_32(weights=torchvision.models.ViT_B_32_Weights.IMAGENET1K_V1)
+        #self.model = nn.Sequential(*list(pretrained.children())[:-1]) DO NOT USE NN SEQUENTIAL WITH TRANSFORMERS -->
+        # original functionality is lost
+        # 5 head: just switch classifier to identity
+        self.pretrained.heads = nn.Identity()
+        # freeze the model
+        for param in self.pretrained.parameters():
+            param.requires_grad = False
+    def forward(self, x):
+        return self.pretrained(x)
+
+class ContrastiveModel_cnn(nn.Module):
+    def __init__(self, projection_dim = 64,num_blocks=[1, 1, 1], channels=[64, 128, 256], dropout=0):
+        super().__init__()
+        self.eye_encoder = ResNet1D(num_blocks=num_blocks, channels=channels, dropout=dropout)
+        self.image_encoder = ImageEncoder()
+        self.projection_eye = ProjectionHead(embedding_dim=channels[-1], projection_dim=projection_dim)
+        self.projection_image = ProjectionHead(embedding_dim=768, projection_dim=projection_dim)
+    def forward(self, batch):
+        eye_input = batch["eye_data"]
+        image_input = batch["img"]
+        eye_features = self.eye_encoder(eye_input)
+        image_features = self.image_encoder(image_input)
+        eye_embedding = self.projection_eye(eye_features)
+        image_embedding = self.projection_image(image_features)
+
+        # compute similarity
+        logits = eye_embedding @ image_embedding.T
+
+        # targets
+        target_eye = eye_embedding @ eye_embedding.T
+        target_image = image_embedding @ image_embedding.T
+        targets = torch.softmax((target_eye + target_image) / 2, dim=-1)
+
+        # loss
+        eye_loss = nn.functional.cross_entropy(logits, targets, reduction='none')
+        image_loss = nn.functional.cross_entropy(logits.T, targets.T, reduction='none')
+
+        loss = (eye_loss + image_loss) / 2
+
+        return loss.mean()
+
 if __name__ == "__main__":
     # create model
-    model = ResNet1D(num_classes=4, num_blocks=[1, 1, 1], channels=[64, 128, 256])
-    print(model)
+    model = ContrastiveModel_cnn()
 
     # test model with random input
-    x = torch.randn(1, 3, 1401)
-    y = model(x)
-    print(y.shape)
+    x = torch.randn(5, 3, 1401)
+    y = torch.randn(5, 3, 224, 224)
+
+    print(model([x, y]))
 
     # prnt parameters
     print(sum(p.numel() for p in model.parameters() if p.requires_grad))

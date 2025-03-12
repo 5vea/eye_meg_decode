@@ -12,15 +12,8 @@ Cosine annealing will be used to update the learning rate, which will start at i
 Using it to avoid overfitting and to find a good learning rate. We will not use restarts, because those might lead to more overfitting.
 """
 
-"""
-To Do:
-better folder management!
-tensorboard - load split
-epoch start from last epoch
-"""
-
 import os
-os.environ["CUDA_VISIBLE_DEVICES"] = "GPU-f4bd4d61-6e02-6347-559f-dc9c6528303e"
+os.environ["CUDA_VISIBLE_DEVICES"] = "GPU-951bdf40-e7e4-368e-ca9e-d63cf9d23f30"
 
 import torch
 import torch.nn as nn
@@ -35,6 +28,30 @@ import pandas as pd
 from torch.utils.tensorboard import SummaryWriter
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+def load_checkpoint(model, optimizer, scheduler, path):
+    checkpoint_path = os.path.join(path, 'checkpoint.pth')
+    if os.path.exists(checkpoint_path):
+        checkpoint = torch.load(checkpoint_path)
+        model.load_state_dict(checkpoint['state_dict'])
+        optimizer.load_state_dict(checkpoint['optimizer'])
+        scheduler.load_state_dict(checkpoint['scheduler'])
+        start_epoch = checkpoint['epoch'] + 1
+        print(f"Checkpoint loaded from epoch {start_epoch}")
+        return start_epoch
+    return 0
+
+def save_checkpoint(model, optimizer, scheduler, epoch, path):
+    checkpoint = {
+        'epoch': epoch,
+        'state_dict': model.state_dict(),
+        'optimizer': optimizer.state_dict(),
+        'scheduler': scheduler.state_dict(),
+    }
+    torch.save(checkpoint, os.path.join(path, 'checkpoint.pth'))
+    print(f"Checkpoint saved at epoch {epoch}")
+
+
 
 #%% setup argparse
 parser = argparse.ArgumentParser()
@@ -138,8 +155,8 @@ class ReadData(torch.utils.data.Dataset):
 
     def train_test_split(self):
         """
-        Returns the indices of the training and test set. The test set is one image per label, chosen randomly, if load is false.
-        If load is true, the indices are loaded from the model folder.
+        Returns the indeces of the training and test set. The test set is one image per label, chosen randomly, if load is false.
+        If load is true, the indeces are loaded from the model folder.
         """
         pass
         if args.load:
@@ -295,11 +312,11 @@ def epoch_loop(model_epoch, data, criterion, optimizer=None, scheduler=None):
         running_accs /= torch.tensor(count_batches).to(device)
         return running_loss, running_accs[0], running_accs[1], running_accs[2]
 
-def train_model(model, dl_dict, criterion, optimizer, scheduler, num_epochs=100):
+def train_model(model, dl_dict, criterion, optimizer, scheduler, num_epochs=100, epoch_start=0):
     model.to(device)
 
     # update model weights by looping through dataset multiple times
-    for epoch in range(num_epochs):
+    for epoch in range(epoch_start, num_epochs + epoch_start):
         epoch_loss, epoch_acc, epoch_acc_5, epoch_acc_100 = epoch_loop(model, dl_dict["train"], criterion, optimizer, scheduler)
         print(f"Train: Epoch {epoch+1}/{num_epochs},\t "
               f"Loss: {float(epoch_loss.cpu().detach().numpy()):.4f},\t "
@@ -322,11 +339,11 @@ def train_model(model, dl_dict, criterion, optimizer, scheduler, num_epochs=100)
         writer.add_scalar("Acc@100/test", float(epoch_acc_100.cpu().detach().numpy()), epoch)
 
         # save checkpoint after each epoch
-        save_checkpoint(model, optimizer, scheduler, epoch, path)
+        save_checkpoint(model, optimizer, scheduler, epoch, model_folder)
 
 # create model
 if args.model == "cnn":
-    model = cnn.ResNet1D(in_channels=3, num_classes=len(dataset.label_output), patch_size=3)
+    model = cnn.ResNet1D(num_classes=len(dataset.label_output), num_blocks=[1, 1, 1], channels=[64, 128, 256])
 elif args.model == "transformer":
     model = tf.EyeTransformerEncClass(num_layers=1, num_heads=4, n_classes=len(dataset.label_output), embedding_dim=32, dropout_rate=0.3)
 else:
@@ -344,37 +361,12 @@ scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=100, eta_min=a
 # to device
 model.to(device)
 
+if args.load:
+    start_epoch = load_checkpoint(model, optimizer, scheduler, model_folder)
+else:
+    start_epoch = 0
+
 # train model
-train_model(model, dataloaders, criterion, optimizer, scheduler, num_epochs=args.epochs)
+train_model(model, dataloaders, criterion, optimizer, scheduler, num_epochs=args.epochs, epoch_start = start_epoch)
 
 writer.close()
-
-
-# save model, optimizer, scheduler
-path = model_folder
-
-def save_checkpoint(model, optimizer, scheduler, epoch, path):
-    checkpoint = {
-        'epoch': epoch,
-        'state_dict': model.state_dict(),
-        'optimizer': optimizer.state_dict(),
-        'scheduler': scheduler.state_dict(),
-    }
-    torch.save(checkpoint, os.path.join(path, 'checkpoint.pth'))
-    print(f"Checkpoint saved at epoch {epoch}")
-
-def load_checkpoint(model, optimizer, scheduler, path):
-    checkpoint_path = os.path.join(path, 'checkpoint.pth')
-    if os.path.exists(checkpoint_path):
-        checkpoint = torch.load(checkpoint_path)
-        model.load_state_dict(checkpoint['state_dict'])
-        optimizer.load_state_dict(checkpoint['optimizer'])
-        scheduler.load_state_dict(checkpoint['scheduler'])
-        start_epoch = checkpoint['epoch'] + 1
-        print(f"Checkpoint loaded from epoch {start_epoch}")
-        return start_epoch
-    else:
-        print("No checkpoint found, starting from scratch.")
-        return 0
-
-
