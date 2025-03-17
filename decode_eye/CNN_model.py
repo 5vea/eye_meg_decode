@@ -210,11 +210,5 @@ if __name__ == "__main__":
     # create model
     model = ResNet1D(num_classes=4, num_blocks=[1, 1, 1], channels=[64, 128, 256])
     print(model)
-
-    # test model with random input
-    x = torch.randn(1, 3, 1401)
-    y = model(x)
-    print(y.shape)
-
     # prnt parameters
     print(sum(p.numel() for p in model.parameters() if p.requires_grad))

@@ -75,10 +75,6 @@ class SelfAttention(nn.Module):
         # Scaled by square root of head_size to maintain stable gradients
         attention_scores = queries @ keys.transpose(-2, -1) * (embedding_dim ** -0.5)
 
-        """# Apply causal mask to prevent attention to future tokens
-        attention_scores = attention_scores.masked_fill(self.tril[:sequence_length, :sequence_length] == 0,
-                                                        float('-inf'))"""
-
         # Convert attention scores to probabilities
         attention_probs = F.softmax(attention_scores, dim=-1)
         attention_probs = self.dropout(attention_probs)
