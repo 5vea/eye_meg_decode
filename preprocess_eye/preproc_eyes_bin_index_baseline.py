@@ -2,7 +2,7 @@
 This code iterates through all participants and sessions and applies a baseline correction to the eye data. The baseline correction is done by subtracting the mean of the x, y, and p values before timepoint 0 from the respective values at each timepoint. The corrected data is then binned into 13 bins based on the timepoints.
 Also, a bin index is applied, so that the data can be split into bins for later fine grained analysis.
 
-Also test images are deleted, because those were either catch images or repeated images.
+Also catch images are deleted, because those were either catch images or repeated images.
 """
 
 import pandas as pd
