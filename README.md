@@ -5,16 +5,28 @@ The goal of this repo is to develop a method to reliably decode information from
 For this we will use the things dataset and use a contrastive learning approach. When later incorporating M/EEG data, a 3D clip will be possible, to observe, if not only images can be decoded from eye movements, but if eye movements can also encode M/EEG data.
 This project will focus on the eye movements side of things.
 
-## Plan:
-First we need an embedding model fit for eye movements. We will compare a CNN (a 1D ResNet) and a transformer encoder. Both will be trained as classifiers for 1/3 of the concepts, to mitigate later double dipping. 
-The performance of the decoders is tested on one sample that was left out from all of the 1/3 training classes. This elicited that the transformer was heavily overfitting (100% Acc@1 in train and 0.32% in test), which is why random epoch wise data augmentation was introduced. The data augmentation is discussed below.
+## Plan and Goal
+Please refer to our little goup paper in the global folder: paper_kürten-fohs.pdf
 
-Then both will be used as enmbedding models for eye movements in seperate instances.
-The non-linear embedding layers for a pretrained vision encoder (e.g. ViT-H) will be trained on the 1/3 of classes that were already trained in the classfication (the double dipping part) and 1/3 of the left out classes. Then the model will be tested in zero shot evaluation within and between classes (e.g. 2/3AFC) on the last left out 1/3 of classes.
+## Important Folders
+### preprocess_eye
+There are two important files in this folder preproc_things_format.py and preproc_eyes_bin_index_baseline.py. The latter is the first step on preparing the eye-movement data and the former transforms the preprocessed trials to a dataset friendly structure.
 
+### preprocess_categories
+This is needed to match the images to their IDs and label ground truths (match_categories.py).
 
-## Data Augmentation
-We tried smooth time masking as a way, to break heavy trial dependent classifications. The length of the mask is 0.1 of signal length. 
-Furthermore, we added gaussian noise to the data.
+### decode_eye
+Here you can find the two classifier models (CNN_model.py and transformer_model.py) and their training script (train_model.py).
 
-Those steps were only done in training and can be found in the transformer module.
+### contrastive_eye_image
+In this folder are the model scripts (transformer_cl_model.py and cnn_cl_model.py) and their training script (train_cl_model.py) for the unsupervised learning approach. Also the evaluation is in a subfolder here.
+#### eval
+In this subfolder, you can find the task creations to test our models with (test_script.py and test_script_left_out.py) and the zero-shot execution (zero_shot_pairwise.py). Further there is the analysis of the zero-shot evaluation in this folder (analysis.py).
+
+### interpretations
+#### rsa
+Sveas assignment.
+#### attention_maps
+Saskias assignment.
+
+The other folders are not important for the current state of the project. data and simulate_eye served as testing grounds and decode_meg and preprocess_meg are place holders for neural processing.
